@@ -1,11 +1,11 @@
-import functools
 import os
 
-from conans import ConanFile, CMake, tools
-from conans.errors import ConanInvalidConfiguration
+from conan import ConanFile
+from conan.tools.files import get, copy, export_conandata_patches, apply_conandata_patches
+from conan.tools.cmake import CMake, CMakeToolchain, cmake_layout
+from conan.errors import ConanInvalidConfiguration
 
-required_conan_version = ">=1.43.0"
-
+required_conan_version = ">=1.52.0"
 
 class WineditlineConan(ConanFile):
     name = "wineditline"
@@ -17,7 +17,6 @@ class WineditlineConan(ConanFile):
     homepage = "http://mingweditline.sourceforge.net/"
     topics = ("readline", "editline", "windows")
     license = "BSD-3-Clause"
-    generators = ("cmake",)
     settings = ("os", "arch", "compiler", "build_type")
     options = {
         "shared": [True, False],
@@ -25,40 +24,39 @@ class WineditlineConan(ConanFile):
     default_options = {
         "shared": False,
     }
-    exports_sources = ("patches/*", "CMakeLists.txt")
+    exports_sources = ("CMakeLists.txt")
+
+    def export_sources(self):
+        export_conandata_patches(self)
+
+    def layout(self):
+        cmake_layout(self, src_folder="src")
 
     def validate(self):
         if self.settings.os != "Windows":
             message = "wineditline is supported only on Windows."
             raise ConanInvalidConfiguration(message)
 
-    @property
-    def _source_subfolder(self):
-        return "source_subfolder"
-
     def source(self):
-        root = self._source_subfolder
-        get_args = self.conan_data["sources"][self.version]
-        tools.get(**get_args, destination=root, strip_root=True)
+        get(self, **self.conan_data["sources"][self.version], strip_root=True)
 
-    def configure(self):
-        del self.settings.compiler.libcxx
-        del self.settings.compiler.cppstd
+    def package_id(self):
+        del self.info.settings.compiler
 
-    @functools.lru_cache(1)
-    def _configure_cmake(self):
-        cmake = CMake(self)
-        cmake.configure()
-        return cmake
+    def generate(self):
+        tc = CMakeToolchain(self)
+        tc.generate()
 
     def build(self):
-        for patch in self.conan_data["patches"][self.version]:
-            tools.patch(**patch)
-        self._configure_cmake().build()
+        apply_conandata_patches(self)
+        cmake = CMake(self)
+        cmake.configure()
+        cmake.build()
 
     def package(self):
-        self.copy("COPYING", "licenses", self._source_subfolder)
-        self._configure_cmake().install()
+        copy(self, "COPYING", src=self.source_folder, dst=os.path.join(self.package_folder, "licenses"))
+        cmake = CMake(self)
+        cmake.install()
 
     def package_info(self):
         self.cpp_info.libs = ["edit"]
